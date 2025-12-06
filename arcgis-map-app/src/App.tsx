@@ -8,6 +8,7 @@ import Point from '@arcgis/core/geometry/Point.js'
 import Graphic from '@arcgis/core/Graphic.js'
 import './App.css'
 import ClientStreamLayerDemo from './components/ClientStreamLayerDemo'
+import DictionaryGraphicLayerDemo from './components/DictionaryGraphicLayerDemo'
 import { DEFAULT_CENTER } from './arcgis/constants'
 import { createDictionaryRenderer } from './arcgis/renderers'
 import { formatCoordinate } from './utils/format'
@@ -222,6 +223,7 @@ const App = () => {
       </div>
 
       <ClientStreamLayerDemo />
+      <DictionaryGraphicLayerDemo />
     </div>
   )
 }
