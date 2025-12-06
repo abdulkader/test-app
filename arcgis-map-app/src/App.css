@@ -137,3 +137,95 @@
     min-height: 360px;
   }
 }
+
+.stream-demo {
+  margin-top: 2rem;
+  background: #fff;
+  border-radius: 1rem;
+  padding: 1.5rem;
+  border: 1px solid #e1e7f2;
+  box-shadow: 0 20px 45px rgba(13, 20, 34, 0.08);
+}
+
+.stream-demo__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.stream-demo__header h2 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.stream-demo__header p {
+  margin: 0.35rem 0 0;
+  color: #4b5f74;
+  max-width: 520px;
+}
+
+.stream-demo__content {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr);
+  gap: 1.5rem;
+}
+
+.stream-demo__map {
+  min-height: 380px;
+  border-radius: 0.85rem;
+  overflow: hidden;
+  border: 1px solid #dbe2ef;
+  box-shadow: inset 0 0 0 1px rgba(13, 27, 49, 0.02);
+}
+
+.stream-demo__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.unit-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.85rem 1rem;
+  border: 1px solid #e1e7f2;
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, #f8faff, #f1f5ff);
+}
+
+.unit-row strong {
+  display: block;
+  font-size: 1rem;
+  color: #0d1c2e;
+}
+
+.unit-row__subtitle {
+  font-size: 0.85rem;
+  color: #6c7a91;
+}
+
+.unit-row__coords {
+  display: flex;
+  flex-direction: column;
+  text-align: right;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 0.85rem;
+  color: #33425e;
+}
+
+@media (max-width: 1024px) {
+  .stream-demo__content {
+    grid-template-columns: 1fr;
+  }
+
+  .stream-demo__map {
+    min-height: 320px;
+  }
+}

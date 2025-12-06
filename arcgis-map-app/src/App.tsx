@@ -6,10 +6,11 @@ import SceneView from '@arcgis/core/views/SceneView.js'
 import GraphicsLayer from '@arcgis/core/layers/GraphicsLayer.js'
 import Point from '@arcgis/core/geometry/Point.js'
 import Graphic from '@arcgis/core/Graphic.js'
-import DictionaryRenderer from '@arcgis/core/renderers/DictionaryRenderer.js'
-import SimpleRenderer from '@arcgis/core/renderers/SimpleRenderer.js'
-import SimpleMarkerSymbol from '@arcgis/core/symbols/SimpleMarkerSymbol.js'
 import './App.css'
+import ClientStreamLayerDemo from './components/ClientStreamLayerDemo'
+import { DEFAULT_CENTER } from './arcgis/constants'
+import { createDictionaryRenderer } from './arcgis/renderers'
+import { formatCoordinate } from './utils/format'
 
 type ViewMode = '2d' | '3d'
 type RendererEnabledGraphicsLayer = GraphicsLayer & { renderer: __esri.Renderer }
@@ -19,42 +20,9 @@ const STREAM_RADIUS_DEGREES = 0.015
 const STREAM_LAT_STRETCH = 0.6
 const STREAM_ID = 'UNIT-01'
 
-const DEFAULT_CENTER = {
-  longitude: -122.4194,
-  latitude: 37.7749,
-}
-
 esriConfig.assetsPath = `${import.meta.env.BASE_URL}assets`
 
-const createStreamRenderer = () => {
-  try {
-    return new DictionaryRenderer({
-      url: 'https://www.arcgis.com/sharing/rest/content/items/0b7f07556eae4869935b14c469b3cb29/data',
-      fieldMap: {
-        sidc: 'sidc',
-        uniquedesignation: 'uniquedesignation',
-        status: 'status',
-      },
-      config: {
-        textVisible: false,
-      },
-    })
-  } catch (error) {
-    console.warn('Falling back to basic renderer', error)
-    return new SimpleRenderer({
-      symbol: new SimpleMarkerSymbol({
-        color: '#1d72f2',
-        size: 12,
-        outline: {
-          color: '#ffffff',
-          width: 1.5,
-        },
-      }),
-    })
-  }
-}
-
-const formatNumber = (value: number) => value.toFixed(4)
+const createStreamRenderer = () => createDictionaryRenderer()
 
 const App = () => {
   const mapNodeRef = useRef<HTMLDivElement | null>(null)
@@ -237,7 +205,7 @@ const App = () => {
         <article className="stat-card">
           <h3>Position</h3>
           <strong>
-            {formatNumber(latestPosition.latitude)}, {formatNumber(latestPosition.longitude)}
+            {formatCoordinate(latestPosition.latitude)}, {formatCoordinate(latestPosition.longitude)}
           </strong>
         </article>
         <article className="stat-card">
@@ -252,6 +220,8 @@ const App = () => {
       <div className="map-container">
         <div className="map-view" ref={mapNodeRef} aria-label="ArcGIS map view" />
       </div>
+
+      <ClientStreamLayerDemo />
     </div>
   )
 }
