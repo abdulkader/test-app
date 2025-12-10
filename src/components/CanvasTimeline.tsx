@@ -515,6 +515,36 @@ export const CanvasTimeline = ({
           <span>Scale: {formatScale(msPerPixel)}</span>
           <span>Offset: {formatDuration(startMs, startMs + offsetMs)}</span>
         </div>
+
+        {hoverState && (
+          <div
+            className={`event-tooltip${
+              hoverState.events.length > 1 ? " group" : ""
+            }`}
+            style={{
+              left: hoverState.canvasX,
+              top: hoverState.canvasY
+            }}
+          >
+            {hoverState.events.length === 1 ? (
+              <>
+                <strong>{hoverState.events[0].title}</strong>
+                {hoverState.events[0].subtitle && (
+                  <span>{hoverState.events[0].subtitle}</span>
+                )}
+                <small>{formatTimestamp(hoverState.events[0].timeMs)}</small>
+              </>
+            ) : (
+              <>
+                <strong>
+                  {hoverState.events[0].subtitle ??
+                    hoverState.events[0].title}
+                </strong>
+                <span>{hoverState.events.length} events overlapped</span>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="timeline-seeker">
@@ -532,36 +562,6 @@ export const CanvasTimeline = ({
           <span>{formatTimestamp(startMs + maxOffset)}</span>
         </div>
       </div>
-
-      {hoverState && (
-        <div
-          className={`event-tooltip${
-            hoverState.events.length > 1 ? " group" : ""
-          }`}
-          style={{
-            left: hoverState.canvasX,
-            top: hoverState.canvasY
-          }}
-        >
-          {hoverState.events.length === 1 ? (
-            <>
-              <strong>{hoverState.events[0].title}</strong>
-              {hoverState.events[0].subtitle && (
-                <span>{hoverState.events[0].subtitle}</span>
-              )}
-              <small>{formatTimestamp(hoverState.events[0].timeMs)}</small>
-            </>
-          ) : (
-            <>
-              <strong>
-                {hoverState.events[0].subtitle ??
-                  hoverState.events[0].title}
-              </strong>
-              <span>{hoverState.events.length} events overlapped</span>
-            </>
-          )}
-        </div>
-      )}
 
       {activeEvent && (
         <div className="event-detail">
