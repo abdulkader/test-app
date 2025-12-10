@@ -196,14 +196,16 @@ export const CanvasTimeline = ({
 
   const zoom = useCallback(
     (direction: "in" | "out", anchorX?: number) => {
+      if (!width) return;
       const anchor = anchorX ?? width / 2;
       setMsPerPixel((prev) => {
         const factor = direction === "in" ? zoomStep : 1 / zoomStep;
         const next = clamp(prev * factor, minMsPerPixel, maxMsPerPixel);
         setOffsetMs((prevOffset) => {
           const anchorTime = startMs + prevOffset + anchor * prev;
-          const nextOffset = anchorTime - startMs - anchor * next;
-          return clampOffset(nextOffset);
+          const centeredOffset =
+            anchorTime - startMs - (width * next) / 2;
+          return clampOffset(centeredOffset);
         });
         return next;
       });
@@ -325,19 +327,22 @@ export const CanvasTimeline = ({
     const visibleEnd = visibleStart + width * msPerPixel;
     const firstTick = Math.ceil(visibleStart / tickStep) * tickStep;
 
-    ctx.strokeStyle = "rgba(255,255,255,0.1)";
-    ctx.fillStyle = "rgba(255,255,255,0.6)";
-    ctx.font = "12px Inter, sans-serif";
-    ctx.textAlign = "center";
+    const pxPerTick = tickStep / msPerPixel;
+    if (pxPerTick >= 60) {
+      ctx.strokeStyle = "rgba(255,255,255,0.1)";
+      ctx.fillStyle = "rgba(255,255,255,0.6)";
+      ctx.font = "12px Inter, sans-serif";
+      ctx.textAlign = "center";
 
-    for (let tick = firstTick; tick < visibleEnd; tick += tickStep) {
-      const x = (tick - startMs - offsetMs) / msPerPixel;
-      if (x < 0 || x > width) continue;
-      ctx.beginPath();
-      ctx.moveTo(x, baselineY);
-      ctx.lineTo(x, baselineY + 8);
-      ctx.stroke();
-      ctx.fillText(formatClock(tick), x, baselineY + 24);
+      for (let tick = firstTick; tick < visibleEnd; tick += tickStep) {
+        const x = (tick - startMs - offsetMs) / msPerPixel;
+        if (x < 0 || x > width) continue;
+        ctx.beginPath();
+        ctx.moveTo(x, baselineY);
+        ctx.lineTo(x, baselineY + 8);
+        ctx.stroke();
+        ctx.fillText(formatClock(tick), x, baselineY + 24);
+      }
     }
 
     const hitboxes: EventHitbox[] = [];
