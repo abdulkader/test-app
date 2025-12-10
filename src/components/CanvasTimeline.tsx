@@ -191,9 +191,22 @@ export const CanvasTimeline = ({
   }, [normalizedEvents, startMs]);
 
   const clampOffset = useCallback(
-    (next: number) => clamp(next, 0, maxOffset),
-    [maxOffset]
+    (next: number, spanOverride?: number) => {
+      const span =
+        spanOverride ??
+        (width > 0 ? width * msPerPixel : 0);
+      if (span <= 0) {
+        return clamp(next, 0, maxOffset);
+      }
+      const limit = Math.max(maxOffset - span, 0);
+      return clamp(next, 0, limit);
+    },
+    [maxOffset, msPerPixel, width]
   );
+
+  useEffect(() => {
+    setOffsetMs((prev) => clampOffset(prev));
+  }, [clampOffset]);
 
   const zoom = useCallback(
     (direction: "in" | "out", anchorX?: number) => {
@@ -206,7 +219,7 @@ export const CanvasTimeline = ({
           const anchorTime = startMs + prevOffset + anchor * prev;
           const centeredOffset =
             anchorTime - startMs - (width * next) / 2;
-          return clampOffset(centeredOffset);
+          return clampOffset(centeredOffset, width * next);
         });
         return next;
       });
@@ -228,7 +241,7 @@ export const CanvasTimeline = ({
       const center = (summary.minMs + summary.maxMs) / 2;
       const newOffset =
         center - startMs - (width * targetMsPerPixel) / 2;
-      setOffsetMs(clampOffset(newOffset));
+      setOffsetMs(clampOffset(newOffset, width * targetMsPerPixel));
     },
     [clampOffset, maxMsPerPixel, minMsPerPixel, startMs, width]
   );
@@ -275,9 +288,11 @@ export const CanvasTimeline = ({
     setOffsetMs(clampOffset(value));
   };
 
+  const viewportSpan = width * msPerPixel;
   const viewportCenter =
-    startMs + offsetMs + (width * msPerPixel) / 2;
-  const safeMaxOffset = maxOffset || 1;
+    startMs + offsetMs + viewportSpan / 2;
+  const seekerMax =
+    width > 0 ? Math.max(maxOffset - viewportSpan, 0) : maxOffset;
 
   const handleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -448,7 +463,7 @@ export const CanvasTimeline = ({
         <input
           type="range"
           min={0}
-          max={safeMaxOffset}
+          max={seekerMax}
           step={msPerPixel}
           value={offsetMs}
           onChange={handleSeekerChange}
