@@ -152,7 +152,9 @@ export const CanvasTimeline = ({
   onEventClick
 }: CanvasTimelineProps) => {
   const startMs = useMemo(() => normalizeDate(startTime), [startTime]);
-  const [msPerPixel, setMsPerPixel] = useState(initialMsPerPixel);
+  const [msPerPixel, setMsPerPixel] = useState(() =>
+    clamp(initialMsPerPixel, minMsPerPixel, maxMsPerPixel)
+  );
   const [offsetMs, setOffsetMs] = useState(0);
   const [activeEvent, setActiveEvent] = useState<NormalizedEvent | null>(null);
   const [hoverState, setHoverState] = useState<{
@@ -231,13 +233,29 @@ export const CanvasTimeline = ({
     setOffsetMs((prev) => clampOffset(prev));
   }, [clampOffset]);
 
+  const effectiveMaxMsPerPixel = useMemo(() => {
+    if (!width) return maxMsPerPixel;
+    if (maxOffset === 0) return Math.max(minMsPerPixel, 1);
+    const required = maxOffset / width;
+    const bounded = Math.max(required, minMsPerPixel);
+    return Math.min(maxMsPerPixel, bounded);
+  }, [maxMsPerPixel, maxOffset, minMsPerPixel, width]);
+
+  useEffect(() => {
+    setMsPerPixel((prev) => clamp(prev, minMsPerPixel, effectiveMaxMsPerPixel));
+  }, [effectiveMaxMsPerPixel, minMsPerPixel]);
+
   const zoom = useCallback(
     (direction: "in" | "out", anchorX?: number) => {
       if (!width) return;
       const anchor = anchorX ?? width / 2;
       setMsPerPixel((prev) => {
         const factor = direction === "in" ? zoomStep : 1 / zoomStep;
-        const next = clamp(prev * factor, minMsPerPixel, maxMsPerPixel);
+        const next = clamp(
+          prev * factor,
+          minMsPerPixel,
+          effectiveMaxMsPerPixel
+        );
         setOffsetMs((prevOffset) => {
           const anchorTime = startMs + prevOffset + anchor * prev;
           const centeredOffset =
@@ -247,7 +265,14 @@ export const CanvasTimeline = ({
         return next;
       });
     },
-    [clampOffset, maxMsPerPixel, minMsPerPixel, startMs, width, zoomStep]
+    [
+      clampOffset,
+      effectiveMaxMsPerPixel,
+      minMsPerPixel,
+      startMs,
+      width,
+      zoomStep
+    ]
   );
 
   const focusWave = useCallback(
@@ -258,7 +283,7 @@ export const CanvasTimeline = ({
       const targetMsPerPixel = clamp(
         padded / Math.max(width, 1),
         minMsPerPixel,
-        maxMsPerPixel
+        effectiveMaxMsPerPixel
       );
       setMsPerPixel(targetMsPerPixel);
       const center = (summary.minMs + summary.maxMs) / 2;
@@ -266,7 +291,13 @@ export const CanvasTimeline = ({
         center - startMs - (width * targetMsPerPixel) / 2;
       setOffsetMs(clampOffset(newOffset, width * targetMsPerPixel));
     },
-    [clampOffset, maxMsPerPixel, minMsPerPixel, startMs, width]
+    [
+      clampOffset,
+      effectiveMaxMsPerPixel,
+      minMsPerPixel,
+      startMs,
+      width
+    ]
   );
 
   const handleWheel = useCallback(
