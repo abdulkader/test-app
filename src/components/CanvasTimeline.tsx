@@ -145,7 +145,7 @@ export const CanvasTimeline = ({
   startTime,
   events,
   height = 320,
-  minMsPerPixel = 1000,
+  minMsPerPixel = 100,
   maxMsPerPixel = 60 * 60 * 1000,
   initialMsPerPixel = 60_000,
   zoomStep = 0.7,
