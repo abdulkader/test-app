@@ -101,6 +101,22 @@ const formatDuration = (from: number, to: number) => {
   return parts.join(" ");
 };
 
+const formatScale = (value: number) => {
+  if (value >= 60 * 60 * 1000) {
+    return `${(value / (60 * 60 * 1000)).toFixed(1)}h/px`;
+  }
+  if (value >= 60 * 1000) {
+    return `${(value / (60 * 1000)).toFixed(1)}m/px`;
+  }
+  if (value >= 1000) {
+    const seconds = value / 1000;
+    const decimals = seconds >= 10 ? 0 : 1;
+    return `${seconds.toFixed(decimals)}s/px`;
+  }
+  const decimals = value >= 10 ? 0 : 2;
+  return `${value.toFixed(decimals)}ms/px`;
+};
+
 const getTickStep = (msPerPixel: number) => {
   const targetPx = 120;
   const desiredMs = msPerPixel * targetPx;
@@ -496,7 +512,7 @@ export const CanvasTimeline = ({
         />
         <div className="timeline-meta">
           <span>Start: {formatTimestamp(startMs)}</span>
-          <span>Scale: {msPerPixel.toFixed(0)} ms / px</span>
+          <span>Scale: {formatScale(msPerPixel)}</span>
           <span>Offset: {formatDuration(startMs, startMs + offsetMs)}</span>
         </div>
       </div>
