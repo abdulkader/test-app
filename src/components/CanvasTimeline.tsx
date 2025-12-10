@@ -536,11 +536,39 @@ export const CanvasTimeline = ({
               </>
             ) : (
               <>
-                <strong>
-                  {hoverState.events[0].subtitle ??
-                    hoverState.events[0].title}
-                </strong>
-                <span>{hoverState.events.length} events overlapped</span>
+                <strong>{hoverState.events.length} events overlapped</strong>
+                <div className="tooltip-group-list">
+                  {Object.values(
+                    hoverState.events.reduce<
+                      Record<
+                        string,
+                        { count: number; label: string; color: string }
+                      >
+                    >((acc, event) => {
+                      const color = event.color ?? DEFAULT_COLOR;
+                      if (!acc[color]) {
+                        acc[color] = {
+                          count: 0,
+                          label: event.subtitle ?? event.title,
+                          color
+                        };
+                      }
+                      acc[color].count += 1;
+                      return acc;
+                    }, {})
+                  ).map(({ color, count, label }) => (
+                    <div key={color} className="tooltip-group-row">
+                      <div className="tooltip-row-left">
+                        <span
+                          className="tooltip-color-dot"
+                          style={{ background: color }}
+                        />
+                        <span>{label}</span>
+                      </div>
+                      <strong>{count}</strong>
+                    </div>
+                  ))}
+                </div>
               </>
             )}
           </div>

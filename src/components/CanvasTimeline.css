@@ -187,6 +187,34 @@
   color: rgba(255, 255, 255, 0.9);
 }
 
+.tooltip-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.tooltip-group-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.78rem;
+}
+
+.tooltip-row-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tooltip-color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
 .seeker-meta {
   display: flex;
   justify-content: space-between;
