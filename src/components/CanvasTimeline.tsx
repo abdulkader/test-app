@@ -185,13 +185,14 @@ export const CanvasTimeline = ({
     return () => observer.disconnect();
   }, []);
 
+  const maxOffset = useMemo(() => {
+    const furthestEvent = normalizedEvents.at(-1)?.timeMs ?? startMs;
+    return Math.max(furthestEvent - startMs, 0);
+  }, [normalizedEvents, startMs]);
+
   const clampOffset = useCallback(
-    (next: number) => {
-      const furthestEvent = normalizedEvents.at(-1)?.timeMs ?? startMs;
-      const maxOffset = Math.max(furthestEvent - startMs, 0);
-      return clamp(next, 0, maxOffset);
-    },
-    [normalizedEvents, startMs]
+    (next: number) => clamp(next, 0, maxOffset),
+    [maxOffset]
   );
 
   const zoom = useCallback(
@@ -268,6 +269,15 @@ export const CanvasTimeline = ({
     canvasRef.current?.releasePointerCapture(event.pointerId);
     panRef.current = null;
   };
+
+  const handleSeekerChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = Number(event.target.value);
+    setOffsetMs(clampOffset(value));
+  };
+
+  const viewportCenter =
+    startMs + offsetMs + (width * msPerPixel) / 2;
+  const safeMaxOffset = maxOffset || 1;
 
   const handleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -431,6 +441,22 @@ export const CanvasTimeline = ({
           <span>Start: {formatTimestamp(startMs)}</span>
           <span>Scale: {msPerPixel.toFixed(0)} ms / px</span>
           <span>Offset: {formatDuration(startMs, startMs + offsetMs)}</span>
+        </div>
+      </div>
+
+      <div className="timeline-seeker">
+        <input
+          type="range"
+          min={0}
+          max={safeMaxOffset}
+          step={msPerPixel}
+          value={offsetMs}
+          onChange={handleSeekerChange}
+        />
+        <div className="seeker-meta">
+          <span>{formatTimestamp(startMs + offsetMs)}</span>
+          <span>Center: {formatTimestamp(viewportCenter)}</span>
+          <span>{formatTimestamp(startMs + maxOffset)}</span>
         </div>
       </div>
 
