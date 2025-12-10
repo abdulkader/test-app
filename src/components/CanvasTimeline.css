@@ -59,6 +59,7 @@
 .timeline-canvas-shell {
   position: relative;
   width: 100%;
+  overflow: hidden;
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: linear-gradient(135deg, rgba(127, 90, 240, 0.12), rgba(94, 234, 212, 0.08));
@@ -66,6 +67,9 @@
 }
 
 .timeline-canvas-shell canvas {
+  display: block;
+  width: 100%;
+  max-width: 100%;
   border-radius: 16px;
   background: rgba(0, 0, 0, 0.15);
   cursor: grab;

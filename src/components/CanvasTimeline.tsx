@@ -195,13 +195,20 @@ export const CanvasTimeline = ({
   );
 
   const zoom = useCallback(
-    (direction: "in" | "out") => {
+    (direction: "in" | "out", anchorX?: number) => {
+      const anchor = anchorX ?? width / 2;
       setMsPerPixel((prev) => {
         const factor = direction === "in" ? zoomStep : 1 / zoomStep;
-        return clamp(prev * factor, minMsPerPixel, maxMsPerPixel);
+        const next = clamp(prev * factor, minMsPerPixel, maxMsPerPixel);
+        setOffsetMs((prevOffset) => {
+          const anchorTime = startMs + prevOffset + anchor * prev;
+          const nextOffset = anchorTime - startMs - anchor * next;
+          return clampOffset(nextOffset);
+        });
+        return next;
       });
     },
-    [maxMsPerPixel, minMsPerPixel, zoomStep]
+    [clampOffset, maxMsPerPixel, minMsPerPixel, startMs, width, zoomStep]
   );
 
   const focusWave = useCallback(
@@ -226,14 +233,13 @@ export const CanvasTimeline = ({
   const handleWheel = useCallback(
     (event: WheelEvent) => {
       event.preventDefault();
-      if (event.ctrlKey) {
-        zoom(event.deltaY > 0 ? "out" : "in");
-        return;
-      }
-      const delta = event.deltaY || event.deltaX;
-      setOffsetMs((prev) => clampOffset(prev + delta * msPerPixel * 0.2));
+      const canvas = canvasRef.current;
+      const rect = canvas?.getBoundingClientRect();
+      const anchor =
+        rect != null ? event.clientX - rect.left : width / 2;
+      zoom(event.deltaY > 0 ? "out" : "in", anchor);
     },
-    [clampOffset, msPerPixel, zoom]
+    [width, zoom]
   );
 
   useEffect(() => {
