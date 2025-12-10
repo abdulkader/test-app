@@ -154,6 +154,39 @@
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
+.event-tooltip {
+  position: absolute;
+  transform: translate(-50%, -110%);
+  padding: 10px 14px;
+  background: rgba(5, 8, 22, 0.9);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+}
+
+.event-tooltip strong {
+  font-size: 0.95rem;
+}
+
+.event-tooltip span,
+.event-tooltip small {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.event-tooltip.group strong {
+  color: #ff9f1c;
+}
+
+.event-tooltip.group span {
+  color: rgba(255, 255, 255, 0.9);
+}
+
 .seeker-meta {
   display: flex;
   justify-content: space-between;

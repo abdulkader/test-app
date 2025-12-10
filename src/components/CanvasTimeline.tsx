@@ -34,6 +34,8 @@ type EventHitbox = {
   y: number;
   width: number;
   height: number;
+  tipX: number;
+  tipY: number;
 };
 
 type WaveSummary = {
@@ -137,6 +139,11 @@ export const CanvasTimeline = ({
   const [msPerPixel, setMsPerPixel] = useState(initialMsPerPixel);
   const [offsetMs, setOffsetMs] = useState(0);
   const [activeEvent, setActiveEvent] = useState<NormalizedEvent | null>(null);
+  const [hoverState, setHoverState] = useState<{
+    events: NormalizedEvent[];
+    canvasX: number;
+    canvasY: number;
+  } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -269,18 +276,55 @@ export const CanvasTimeline = ({
   const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     canvasRef.current?.setPointerCapture(event.pointerId);
     panRef.current = { x: event.clientX, offset: offsetMs };
+    setHoverState(null);
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!panRef.current) return;
-    const deltaPx = panRef.current.x - event.clientX;
-    const deltaMs = deltaPx * msPerPixel;
-    setOffsetMs(clampOffset(panRef.current.offset + deltaMs));
+    if (panRef.current) {
+      const deltaPx = panRef.current.x - event.clientX;
+      const deltaMs = deltaPx * msPerPixel;
+      setOffsetMs(clampOffset(panRef.current.offset + deltaMs));
+      return;
+    }
+
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+    const canvasRect = canvas.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    const pointerX = event.clientX - canvasRect.left;
+    const pointerY = event.clientY - canvasRect.top;
+    const tolerance = 8;
+    const matches = hitboxesRef.current.filter(
+      (box) =>
+        pointerX >= box.x - tolerance &&
+        pointerX <= box.x + box.width + tolerance &&
+        pointerY >= box.y - tolerance &&
+        pointerY <= box.y + box.height + tolerance
+    );
+    if (!matches.length) {
+      setHoverState(null);
+      return;
+    }
+    const topMost = matches.reduce((prev, curr) =>
+      curr.tipY < prev.tipY ? curr : prev
+    );
+    setHoverState({
+      events: matches.map((match) => match.event),
+      canvasX: topMost.tipX + (canvasRect.left - containerRect.left),
+      canvasY: topMost.tipY + (canvasRect.top - containerRect.top)
+    });
   };
 
   const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
     canvasRef.current?.releasePointerCapture(event.pointerId);
     panRef.current = null;
+  };
+
+  const handlePointerLeave = () => {
+    if (!panRef.current) {
+      setHoverState(null);
+    }
   };
 
   const handleSeekerChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -391,18 +435,15 @@ export const CanvasTimeline = ({
       ctx.closePath();
       ctx.fill();
 
-      ctx.fillStyle = "#f8f9ff";
-      ctx.font = "12px Inter, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText(event.title, x, baselineY - spikeHeight - 6);
-
       hitboxes.push({
         id: event.id,
         event,
         x: x - spikeWidth,
         y: baselineY - spikeHeight,
         width: spikeWidth * 2,
-        height: spikeHeight
+        height: spikeHeight,
+        tipX: x,
+        tipY: baselineY - spikeHeight
       });
     });
 
@@ -450,6 +491,7 @@ export const CanvasTimeline = ({
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
+          onPointerLeave={handlePointerLeave}
           onClick={handleClick}
         />
         <div className="timeline-meta">
@@ -474,6 +516,36 @@ export const CanvasTimeline = ({
           <span>{formatTimestamp(startMs + maxOffset)}</span>
         </div>
       </div>
+
+      {hoverState && (
+        <div
+          className={`event-tooltip${
+            hoverState.events.length > 1 ? " group" : ""
+          }`}
+          style={{
+            left: hoverState.canvasX,
+            top: hoverState.canvasY
+          }}
+        >
+          {hoverState.events.length === 1 ? (
+            <>
+              <strong>{hoverState.events[0].title}</strong>
+              {hoverState.events[0].subtitle && (
+                <span>{hoverState.events[0].subtitle}</span>
+              )}
+              <small>{formatTimestamp(hoverState.events[0].timeMs)}</small>
+            </>
+          ) : (
+            <>
+              <strong>
+                {hoverState.events[0].subtitle ??
+                  hoverState.events[0].title}
+              </strong>
+              <span>{hoverState.events.length} events overlapped</span>
+            </>
+          )}
+        </div>
+      )}
 
       {activeEvent && (
         <div className="event-detail">
