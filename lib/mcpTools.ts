@@ -10,11 +10,6 @@ export type ToolSpec = {
   argsSpec: Record<string, { type: string; description: string; required?: boolean }>;
 };
 
-type ToolDef<TArgs extends z.ZodTypeAny> = ToolSpec & {
-  argsSchema: TArgs;
-  execute: (args: z.infer<TArgs>) => Promise<unknown>;
-};
-
 const notesKey = "mcp_notes_v1";
 
 function loadNotes(): Array<{ title: string; body: string; createdAtISO: string }> {

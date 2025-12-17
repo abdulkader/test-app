@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { MLCEngine } from "@mlc-ai/web-llm";
 import { extractFirstJsonObject, safeJsonParse } from "@/lib/json";
 import { getToolByName, getToolSpecs } from "@/lib/mcpTools";
+import { kbAddDocument, kbClearAll, kbDeleteDoc, kbListDocs, kbSearch, type KBDoc } from "@/lib/kb";
 import { createEnglishSpeechRecognizer, isSpeechRecognitionSupported, speakEnglish } from "@/lib/speech";
 
 type ChatMsg = {
@@ -45,6 +46,15 @@ export default function Home() {
   >({ status: "idle" });
   const engineRef = useRef<MLCEngine | null>(null);
 
+  const [embedModelId] = useState<string>("snowflake-arctic-embed-s-q0f32-MLC-b4");
+  const [embedState, setEmbedState] = useState<
+    | { status: "idle" }
+    | { status: "loading"; text: string }
+    | { status: "ready" }
+    | { status: "error"; message: string }
+  >({ status: "idle" });
+  const embedEngineRef = useRef<MLCEngine | null>(null);
+
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [isBusy, setIsBusy] = useState(false);
@@ -55,6 +65,10 @@ export default function Home() {
 
   const toolSpecs = useMemo(() => getToolSpecs(), []);
   const canUseVoiceIn = useMemo(() => isSpeechRecognitionSupported(), []);
+
+  const [kbDocs, setKbDocs] = useState<KBDoc[]>([]);
+  const [kbStatus, setKbStatus] = useState<string>("");
+  const [isIngesting, setIsIngesting] = useState(false);
 
   // Local-first chat history (simple localStorage persistence).
   useEffect(() => {
@@ -87,6 +101,16 @@ export default function Home() {
     }
   }, [messages]);
 
+  useEffect(() => {
+    void (async () => {
+      try {
+        setKbDocs(await kbListDocs());
+      } catch {
+        // ignore
+      }
+    })();
+  }, []);
+
   // Voice input setup.
   useEffect(() => {
     if (!canUseVoiceIn) return;
@@ -107,6 +131,46 @@ export default function Home() {
       onStatus: setVoiceInStatus,
     });
   }, [canUseVoiceIn]);
+
+  async function ensureEmbedEngineLoaded() {
+    if (embedEngineRef.current) return;
+    if (embedState.status === "loading") return;
+    if (typeof window === "undefined") return;
+    if (!("gpu" in navigator)) {
+      setEmbedState({ status: "error", message: "WebGPU not detected (needed for local embeddings)." });
+      return;
+    }
+    setEmbedState({ status: "loading", text: "Loading embedding model…" });
+    try {
+      const webllm = await import("@mlc-ai/web-llm");
+      const engine = new webllm.MLCEngine({
+        initProgressCallback: (p) => {
+          const text = `${p.text}${p.progress ? ` (${Math.round(p.progress * 100)}%)` : ""}`;
+          setEmbedState({ status: "loading", text });
+        },
+        appConfig: { ...webllm.prebuiltAppConfig, useIndexedDBCache: true },
+      });
+      await engine.reload(embedModelId);
+      embedEngineRef.current = engine;
+      setEmbedState({ status: "ready" });
+    } catch (e) {
+      setEmbedState({ status: "error", message: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  async function embedTexts(texts: string[]): Promise<Float32Array[]> {
+    await ensureEmbedEngineLoaded();
+    const engine = embedEngineRef.current;
+    if (!engine) throw new Error("Embedding model is not ready.");
+    const res = await engine.embeddings.create({ input: texts, encoding_format: "float" });
+    return res.data.map((d) => new Float32Array(d.embedding));
+  }
+
+  async function embedQuery(text: string): Promise<Float32Array> {
+    const [v] = await embedTexts([text]);
+    if (!v) throw new Error("Failed to embed query.");
+    return v;
+  }
 
   // Load WebLLM model (all inference stays in the browser; first run downloads model assets).
   useEffect(() => {
@@ -148,6 +212,83 @@ export default function Home() {
     };
   }, [modelId]);
 
+  async function extractTextFromFile(file: File): Promise<string> {
+    const name = file.name.toLowerCase();
+    const mime = file.type || "";
+
+    // PDF
+    if (mime === "application/pdf" || name.endsWith(".pdf")) {
+      const pdfjs = await import("pdfjs-dist");
+      const workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
+      pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+
+      const data = await file.arrayBuffer();
+      const doc = await pdfjs.getDocument({ data }).promise;
+
+      let out = "";
+      for (let i = 1; i <= doc.numPages; i++) {
+        const page = await doc.getPage(i);
+        const content = await page.getTextContent();
+        const strings = (content.items as Array<{ str?: unknown }>)
+          .map((it) => (typeof it.str === "string" ? it.str : ""))
+          .filter(Boolean);
+        out += `\n\n[Page ${i}]\n` + strings.join(" ");
+      }
+      return out.trim();
+    }
+
+    // DOCX
+    if (mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || name.endsWith(".docx")) {
+      const mammoth = await import("mammoth");
+      const data = await file.arrayBuffer();
+      const res = await mammoth.extractRawText({ arrayBuffer: data });
+      return String(res.value || "").trim();
+    }
+
+    // Plain text-ish
+    return (await file.text()).trim();
+  }
+
+  async function ingestFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setIsIngesting(true);
+    setKbStatus("");
+    try {
+      await ensureEmbedEngineLoaded();
+      for (const file of Array.from(files)) {
+        const text = await extractTextFromFile(file);
+        if (!text) {
+          setKbStatus(`No text found in ${file.name}`);
+          continue;
+        }
+        setKbStatus(`Indexing ${file.name}…`);
+        await kbAddDocument({
+          docName: file.name,
+          mimeType: file.type || "application/octet-stream",
+          fullText: text,
+          embed: async (texts) => {
+            // Batch embeddings to avoid huge single requests.
+            const batchSize = 8;
+            const out: Float32Array[] = [];
+            for (let i = 0; i < texts.length; i += batchSize) {
+              const batch = texts.slice(i, i + batchSize);
+              const vecs = await embedTexts(batch);
+              out.push(...vecs);
+            }
+            return out;
+          },
+        });
+      }
+      setKbDocs(await kbListDocs());
+      setKbStatus("Done indexing.");
+    } catch (e) {
+      setKbStatus(e instanceof Error ? e.message : String(e));
+    } finally {
+      setIsIngesting(false);
+      setTimeout(() => setKbStatus(""), 4000);
+    }
+  }
+
   async function runAssistant(userText: string) {
     const engine = engineRef.current;
     if (!engine) {
@@ -155,6 +296,45 @@ export default function Home() {
       setMessages((prev) => [...prev, { id: newId(), role: "assistant", content: msg, createdAt: Date.now() }]);
       if (voiceOutEnabled) speakEnglish(msg);
       return;
+    }
+
+    // 1) Knowledge base retrieval (local RAG) – if we have docs and embedding model available.
+    try {
+      if (kbDocs.length > 0) {
+        const hits = await kbSearch({
+          query: userText,
+          topK: 4,
+          embedQuery,
+        });
+        const best = hits[0]?.score ?? 0;
+        // A conservative threshold; tweak as needed.
+        if (hits.length > 0 && best >= 0.22) {
+          const context = hits
+            .map((h, idx) => `[#${idx + 1}] ${h.docName} (chunk ${h.chunkIndex}, score ${h.score.toFixed(3)}):\n${h.text}`)
+            .join("\n\n");
+
+          const ragSystem = [
+            "You are a local assistant with a user-provided document knowledge base.",
+            "Answer ONLY using the provided CONTEXT. If the answer is not in the context, say you don't have it.",
+            "Cite sources using [#] markers that match the context blocks.",
+          ].join("\n");
+
+          const ragReply = await engine.chat.completions.create({
+            messages: [
+              { role: "system", content: ragSystem },
+              { role: "user", content: `QUESTION:\n${userText}\n\nCONTEXT:\n${context}` },
+            ],
+            temperature: 0.2,
+          });
+
+          const answer = ragReply.choices[0]?.message?.content?.trim() || "I couldn't answer from the uploaded documents.";
+          setMessages((prev) => [...prev, { id: newId(), role: "assistant", content: answer, createdAt: Date.now() }]);
+          if (voiceOutEnabled) speakEnglish(answer);
+          return;
+        }
+      }
+    } catch {
+      // If KB flow fails for any reason, fall back to tool routing.
     }
 
     const routerSystem = [
@@ -302,6 +482,93 @@ export default function Home() {
         </header>
 
         <main className="flex flex-1 flex-col gap-4 py-4">
+          <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-col">
+                <div className="text-sm font-medium">Knowledge base (local)</div>
+                <div className="text-xs text-zinc-600 dark:text-zinc-400">
+                  Upload PDFs / DOCX / text files. Stored + searched locally in IndexedDB.
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="file"
+                  multiple
+                  accept=".pdf,.txt,.md,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                  disabled={isIngesting || isBusy}
+                  onChange={(e) => void ingestFiles(e.target.files)}
+                  className="text-sm"
+                />
+                <button
+                  type="button"
+                  className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950"
+                  disabled={isIngesting || kbDocs.length === 0}
+                  onClick={() => {
+                    void (async () => {
+                      setKbStatus("Clearing…");
+                      await kbClearAll();
+                      setKbDocs(await kbListDocs());
+                      setKbStatus("Cleared.");
+                      setTimeout(() => setKbStatus(""), 2000);
+                    })();
+                  }}
+                >
+                  Clear KB
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-zinc-600 dark:text-zinc-400">
+              <div>
+                Embeddings:{" "}
+                {embedState.status === "ready"
+                  ? "ready"
+                  : embedState.status === "loading"
+                    ? embedState.text
+                    : embedState.status === "error"
+                      ? `error: ${embedState.message}`
+                      : "idle (loads on first upload/search)"}
+              </div>
+              {kbStatus ? <div className="text-zinc-800 dark:text-zinc-200">{kbStatus}</div> : null}
+            </div>
+
+            <div className="mt-3 grid gap-2">
+              {kbDocs.length === 0 ? (
+                <div className="text-sm text-zinc-600 dark:text-zinc-400">No documents uploaded yet.</div>
+              ) : (
+                kbDocs.map((d) => (
+                  <div
+                    key={d.name}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">{d.name}</div>
+                      <div className="text-xs text-zinc-600 dark:text-zinc-400">
+                        {d.numChunks} chunks • {d.mimeType || "unknown type"}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-xs disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950"
+                      disabled={isIngesting}
+                      onClick={() => {
+                        void (async () => {
+                          setKbStatus(`Removing ${d.name}…`);
+                          await kbDeleteDoc(d.name);
+                          setKbDocs(await kbListDocs());
+                          setKbStatus("");
+                        })();
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+
           <div className="flex-1 space-y-3 overflow-auto rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
             {messages.length === 0 ? (
               <div className="text-sm text-zinc-600 dark:text-zinc-400">
