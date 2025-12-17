@@ -391,11 +391,37 @@ export default function Home() {
     });
     const raw = routerReply.choices[0]?.message?.content ?? "";
     const jsonText = extractFirstJsonObject(raw) ?? raw;
-    const parsed = safeJsonParse<unknown>(jsonText);
-    const decision = parsed.ok ? RouterDecisionSchema.safeParse(parsed.value) : null;
+    let parsed = safeJsonParse<unknown>(jsonText);
+    let decision = parsed.ok ? RouterDecisionSchema.safeParse(parsed.value) : null;
+
+    // If the model output isn't valid JSON, do a strict local "repair" pass.
+    if (!decision || !decision.success) {
+      const repair = await engine.chat.completions.create({
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a JSON repair tool. Return ONLY a strict JSON object with keys english_text, tool, args. No markdown.",
+          },
+          {
+            role: "user",
+            content:
+              `Fix the following into valid JSON that matches the schema.\n\nSCHEMA:\n{ "english_text": string, "tool": string | null, "args": object }\n\nTEXT:\n` +
+              raw,
+          },
+        ],
+        temperature: 0,
+      });
+      const repairedRaw = repair.choices[0]?.message?.content ?? "";
+      const repairedJson = extractFirstJsonObject(repairedRaw) ?? repairedRaw;
+      parsed = safeJsonParse<unknown>(repairedJson);
+      decision = parsed.ok ? RouterDecisionSchema.safeParse(parsed.value) : null;
+    }
 
     if (!decision || !decision.success) {
-      const msg = "I couldn't decide on a tool locally. No tool was executed.";
+      const msg =
+        "I couldn't decide on a tool locally. No tool was executed.\n\n" +
+        "Tip: try a very direct request like “What time is it?” or “Calculate 2+2”.";
       setMessages((prev) => [...prev, { id: newId(), role: "assistant", content: msg, createdAt: Date.now() }]);
       if (voiceOutEnabled) speakEnglish(msg);
       return;

@@ -1,8 +1,17 @@
 export function extractFirstJsonObject(text: string): string | null {
   const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end < 0 || end <= start) return null;
-  return text.slice(start, end + 1);
+  if (start < 0) return null;
+  let depth = 0;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+      if (depth < 0) return null;
+    }
+  }
+  return null;
 }
 
 export function safeJsonParse<T>(text: string): { ok: true; value: T } | { ok: false; error: string } {
