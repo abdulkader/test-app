@@ -45,6 +45,7 @@ export default function Home() {
     | { status: "error"; message: string }
   >({ status: "idle" });
   const engineRef = useRef<MLCEngine | null>(null);
+  const [chatLoadProgress, setChatLoadProgress] = useState<number>(0);
 
   const [embedModelId] = useState<string>("snowflake-arctic-embed-s-q0f32-MLC-b4");
   const [embedState, setEmbedState] = useState<
@@ -54,6 +55,7 @@ export default function Home() {
     | { status: "error"; message: string }
   >({ status: "idle" });
   const embedEngineRef = useRef<MLCEngine | null>(null);
+  const [embedLoadProgress, setEmbedLoadProgress] = useState<number>(0);
 
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ChatMsg[]>([]);
@@ -69,6 +71,16 @@ export default function Home() {
   const [kbDocs, setKbDocs] = useState<KBDoc[]>([]);
   const [kbStatus, setKbStatus] = useState<string>("");
   const [isIngesting, setIsIngesting] = useState(false);
+
+  const appIsReady = engineState.status === "ready" && embedState.status === "ready";
+  const appHasError = engineState.status === "error" || embedState.status === "error";
+  const appErrorMessage =
+    engineState.status === "error"
+      ? engineState.message
+      : embedState.status === "error"
+        ? embedState.message
+        : "";
+  const appProgressPct = Math.max(0, Math.min(100, Math.round(((chatLoadProgress + embedLoadProgress) / 2) * 100)));
 
   // Local-first chat history (simple localStorage persistence).
   useEffect(() => {
@@ -132,6 +144,12 @@ export default function Home() {
     });
   }, [canUseVoiceIn]);
 
+  // Preload the embedding model on initial launch (so KB is ready immediately).
+  useEffect(() => {
+    void ensureEmbedEngineLoaded();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function ensureEmbedEngineLoaded() {
     if (embedEngineRef.current) return;
     if (embedState.status === "loading") return;
@@ -140,6 +158,7 @@ export default function Home() {
       setEmbedState({ status: "error", message: "WebGPU not detected (needed for local embeddings)." });
       return;
     }
+    setEmbedLoadProgress(0);
     setEmbedState({ status: "loading", text: "Loading embedding model…" });
     try {
       const webllm = await import("@mlc-ai/web-llm");
@@ -147,11 +166,15 @@ export default function Home() {
         initProgressCallback: (p) => {
           const text = `${p.text}${p.progress ? ` (${Math.round(p.progress * 100)}%)` : ""}`;
           setEmbedState({ status: "loading", text });
+          if (typeof p.progress === "number") setEmbedLoadProgress(p.progress);
         },
         appConfig: { ...webllm.prebuiltAppConfig, useIndexedDBCache: true },
       });
       await engine.reload(embedModelId);
+      // Warm up the embedding pipeline so the app is "ready to use".
+      await engine.embeddings.create({ input: ["warmup"], encoding_format: "float" });
       embedEngineRef.current = engine;
+      setEmbedLoadProgress(1);
       setEmbedState({ status: "ready" });
     } catch (e) {
       setEmbedState({ status: "error", message: e instanceof Error ? e.message : String(e) });
@@ -184,6 +207,7 @@ export default function Home() {
         });
         return;
       }
+      setChatLoadProgress(0);
       setEngineState({ status: "loading", text: "Loading in-browser model…" });
       try {
         const webllm = await import("@mlc-ai/web-llm");
@@ -192,12 +216,20 @@ export default function Home() {
             if (cancelled) return;
             const text = `${p.text}${p.progress ? ` (${Math.round(p.progress * 100)}%)` : ""}`;
             setEngineState({ status: "loading", text });
+            if (typeof p.progress === "number") setChatLoadProgress(p.progress);
           },
           appConfig: { ...webllm.prebuiltAppConfig, useIndexedDBCache: true },
         });
         await engine.reload(modelId);
         if (cancelled) return;
+        // Warm up the chat pipeline so the app is "ready to use".
+        await engine.chat.completions.create({
+          messages: [{ role: "user", content: "warmup" }],
+          max_tokens: 1,
+          temperature: 0,
+        });
         engineRef.current = engine;
+        setChatLoadProgress(1);
         setEngineState({ status: "ready" });
       } catch (e) {
         if (cancelled) return;
@@ -434,6 +466,55 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-50">
+      {!appIsReady && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6">
+          <div className="w-full max-w-lg rounded-xl border border-zinc-200 bg-white p-5 shadow-lg dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="text-base font-semibold">Preparing local models…</div>
+            <div className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+              First run downloads model assets; subsequent runs load from cache.
+            </div>
+
+            <div className="mt-4">
+              <div className="flex items-center justify-between text-xs text-zinc-600 dark:text-zinc-400">
+                <span>Overall</span>
+                <span>{appProgressPct}%</span>
+              </div>
+              <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+                <div className="h-2 bg-blue-600" style={{ width: `${appProgressPct}%` }} />
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-1 text-xs text-zinc-600 dark:text-zinc-400">
+              <div>
+                Chat model:{" "}
+                {engineState.status === "ready"
+                  ? "ready"
+                  : engineState.status === "loading"
+                    ? engineState.text
+                    : engineState.status === "error"
+                      ? `error: ${engineState.message}`
+                      : "idle"}
+              </div>
+              <div>
+                Embedding model:{" "}
+                {embedState.status === "ready"
+                  ? "ready"
+                  : embedState.status === "loading"
+                    ? embedState.text
+                    : embedState.status === "error"
+                      ? `error: ${embedState.message}`
+                      : "idle"}
+              </div>
+            </div>
+
+            {appHasError ? (
+              <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200">
+                {appErrorMessage}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
       <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col px-4 py-6">
         <header className="flex flex-col gap-2 border-b border-zinc-200 pb-4 dark:border-zinc-800">
           <div className="flex items-center justify-between gap-3">
@@ -452,7 +533,7 @@ export default function Home() {
                 className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                 value={modelId}
                 onChange={(e) => setModelId(e.target.value)}
-                disabled={engineState.status === "loading" || isBusy}
+                disabled={!appIsReady || isBusy}
               >
                 <option value="Llama-3.2-1B-Instruct-q4f16_1-MLC">Llama 3.2 1B (q4f16_1)</option>
                 <option value="Llama-3.2-1B-Instruct-q4f32_1-MLC">Llama 3.2 1B (q4f32_1)</option>
@@ -600,7 +681,7 @@ export default function Home() {
               <button
                 type="button"
                 className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950"
-                disabled={!canUseVoiceIn || isBusy || engineState.status !== "ready"}
+                disabled={!canUseVoiceIn || isBusy || !appIsReady}
                 onClick={() => {
                   const r = voiceRecognizerRef.current;
                   if (!r) return;
@@ -623,14 +704,14 @@ export default function Home() {
                     void onSend();
                   }
                 }}
-                disabled={isBusy || engineState.status !== "ready"}
+                disabled={isBusy || !appIsReady}
               />
 
               <button
                 type="button"
                 className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
                 onClick={() => void onSend()}
-                disabled={isBusy || engineState.status !== "ready" || !input.trim()}
+                disabled={isBusy || !appIsReady || !input.trim()}
               >
                 Send
               </button>
